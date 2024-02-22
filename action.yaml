@@ -1,0 +1,177 @@
+name: "Nox (cross-arch)"
+description: "Run a nox session for a particular architecture on the current repository"
+author: "Frequenz Energy-as-a-Service GmbH"
+
+# Refer to the following link(s) for more information on inputs:
+# https://docs.github.com/en/actions/creating-actions/metadata-syntax-for-github-actions#inputs
+inputs:
+  architecture:
+    description: >
+      The architecture to build the Docker image for. This is passed to the
+      `docker/setup-qemu-action`. For example, `arm`, `arm64`, etc.
+    required: true
+  nox_session:
+    description: >
+      The nox session to run.
+    required: true
+  ubuntu_version:
+    description: >
+      The Ubuntu version to use as the base image where `nox` will be running.
+      to run `nox`. For example, `20.04`, `22.04`, etc.
+
+      Required unless a custom `dockerfile` is provided, in which case it
+      should be empty (the default).
+    required: false
+    default: ""
+  python_version:
+    description: >
+      The Python version to use. This version should be present as an Ubuntu
+      package in provided `ubuntu_version`. For example, `3.11`, `3.12`, etc.
+      The package `python{python_version}` will be installed and used.
+
+      Required unless a custom `dockerfile` is provided, in which case it
+      should be empty (the default).
+    required: false
+    default: ""
+  dockerfile:
+    description: >
+      The Dockerfile to use to build the Docker image. The docker context will
+      be set to the directory containing the Dockerfile.
+
+      Required unless `ubuntu_version` and `python_version` are provided, in
+      which case it should be empty (the default).
+    required: false
+    default: ""
+  nox_dependencies:
+    description: >
+      The dependencies to install using `pip` to run `nox`. By default
+      `".[dev-noxfile]"` is used, but projects not having any extra dependency
+      to run nox can just use `"nox"`.
+    required: false
+    default: ".[dev-noxfile]"
+  submodules:
+    description: >
+      Whether to checkout submodules: `true` (default) to checkout submodules
+      or `recursive` to recursively checkout submodules, and `false` to not
+      checkout submodules.
+
+      Passed directly to the `actions/checkout` action, check its documentation
+      for more information.
+    required: false
+    default: "true"
+  checkout_token:
+    description: >
+      The token to use for fetching the repository and submodules. Uses
+      secrets.github_token by default.
+    required: false
+    default: ${{ secrets.github_token }}
+
+
+# Refer to the following link(s) for more information on the composite run steps:
+# https://docs.github.com/en/actions/creating-actions/metadata-syntax-for-github-actions#runs
+runs:
+  using: "composite"
+  steps:
+    - name: Check inputs
+      shell: bash
+      run: |
+        if test -z "${{ inputs.ubuntu_version }}" -a -z "${{ inputs.python_version }}" -a -z "${{ inputs.dockerfile }}"; then \
+          echo "At least one of 'ubuntu_version', 'python_version', or 'dockerfile' must be provided."; \
+          exit 1; \
+        fi
+        if test -n "${{ inputs.dockerfile }}"; then \
+          if test -n "${{ inputs.ubuntu_version }}" -o -n "${{ inputs.python_version }}" -a; then
+            echo "When 'dockerfile' is provided, 'ubuntu_version' and 'python_version' must be empty."; \
+            exit 1; \
+          fi; \
+        fi
+        if test -z "${{ inputs.ubuntu_version }}" -o -z "${{ inputs.python_version }}"; then \
+          echo "Both 'ubuntu_version' and 'python_version' must be provided when 'dockerfile' is not provided."; \
+          exit 1; \
+        fi
+
+    - name: Print environment (debug)
+      shell: bash
+      run: env
+
+    - name: Fetch sources
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      with:
+        token: ${{ inputs.checkout_token }}
+        submodules: ${{ inputs.submodules }}
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@68827325e0b33c7199eb31dd4e31fbe9023e06e3 # v3.0.0
+      with:
+        platforms: linux/${{ inputs.architecture }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3.0.0
+
+    # This is a workaround to prevent the cache from growing indefinitely.
+    # https://docs.docker.com/build/ci/github-actions/cache/#local-cache
+    # https://github.com/docker/build-push-action/issues/252
+    # https://github.com/moby/buildkit/issues/1896
+    - name: Cache container layers
+      uses: actions/cache@13aacd865c20de90d75de3b17ebe84f7a17d57d2 # v4.0.0
+      with:
+        path: /tmp/.buildx-cache
+        key: buildx-nox-cross-arch-${{ runner.os }}-${{ inputs.architecture }}-{{ inputs.ubuntu_version }}-${{ inputs.python_version }}
+
+    - name: Build image
+      uses: docker/build-push-action@4a13e500e55cf31b7a5d59a38ab2040ab0f42f56 # v5.1.0
+      with:
+        context: ${{ inputs.dockerfile == '' && github.action_path || dirname(inputs.dockerfile) }}
+        file: ${{ inputs.dockerfile == '' && format('{0}/resources/Dockerfile', github.action_path) || inputs.dockerfile }}
+        platforms: linux/${{ inputs.architecture }}
+        tags: localhost/nox-cross-arch:latest
+        push: false
+        load: true
+        cache-from: type=local,src=/tmp/.buildx-cache
+        cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+    # Refer to the workaround mentioned above
+    - name: Move cache
+      shell: bash
+      run: |
+        rm -rf /tmp/.buildx-cache
+        mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+    # Cache pip downloads
+    - name: Cache pip downloads
+      uses: actions/cache@13aacd865c20de90d75de3b17ebe84f7a17d57d2 # v4.0.0
+      with:
+        path: /tmp/pip-cache
+        key: buildx-nox-cross-arch-${{ runner.os }}-${{ inputs.architecture }}-{{ inputs.ubuntu_version }}-${{ inputs.python_version }}
+
+    # This ensures that the docker container has access to the pip cache.
+    # Changing the user in the docker-run step causes it to fail due to
+    # incorrect permissions. Setting the ownership of the pip cache to root
+    # before running is a workaround to this issue.
+    - name: Set pip cache owners to root for docker
+      shell: bash
+      run: if test -e /tmp/pip-cache; then sudo chown -R root:root /tmp/pip-cache; fi
+
+    - name: Run nox
+      shell: bash
+      env:
+        NOX_SESSION: ${{ inputs.nox_session }}
+        NOX_DEPENDENCIES: ${{ inputs.nox_dependencies }}
+      run: |
+        docker run \
+          --rm \
+          -v $(pwd):/${{ github.workspace }} \
+          -v /tmp/pip-cache:/root/.cache/pip \
+          -w ${{ github.workspace }} \
+          --net=host \
+          --platform linux/${{ inputs.arch }} \
+          localhost/nox-cross-arch:latest
+      # Not supported in composite actions yet, see:
+      # https://github.com/actions/runner/issues/1979
+      # timeout-minutes: 10
+
+    # This ensures that the runner has access to the pip cache.
+    - name: Reset pip cache ownership
+      shell: bash
+      if: always()
+      run: sudo chown -R $USER:$USER /tmp/pip-cache
