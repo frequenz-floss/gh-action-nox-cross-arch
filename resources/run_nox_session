@@ -1,0 +1,21 @@
+#!/bin/bash
+# License: MIT
+# Copyright © 2024 Frequenz Energy-as-a-Service GmbH
+set -eu
+
+echo "System details:" $(uname -a)
+echo "Machine:" $(uname -m)
+echo "Nox dependencies: $NOX_DEPENDENCIES"
+echo "Nox session: $NOX_SESSION"
+
+pip install $NOX_DEPENDENCIES
+echo "Pip packages installed for running nox:"
+pip freeze
+
+nox --install-only -e $NOX_SESSION
+. ".nox/$NOX_SESSION/bin/activate"
+echo "Pip packages installed in nox environment:"
+pip freeze
+deactivate
+
+exec nox -R -e $NOX_SESSION "$@"
