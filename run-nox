@@ -1,10 +1,8 @@
-#!/bin/bash
+#!/bin/sh
 # License: MIT
 # Copyright © 2024 Frequenz Energy-as-a-Service GmbH
 set -eu
 
-echo "System details:" $(uname -a)
-echo "Machine:" $(uname -m)
 echo "Nox dependencies: $NOX_DEPENDENCIES"
 echo "Nox session: $NOX_SESSION"
 
