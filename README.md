@@ -30,7 +30,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Run nox
-        uses: frequenz-io/gh-action-nox-cross-arch@v0.x.x
+        uses: frequenz-floss/gh-action-nox-cross-arch@v0.x.x
         with:
           architecture: ${{ matrix.architecture }}
           ubuntu_version: ${{ matrix.ubuntu_version }}
@@ -114,7 +114,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Run nox (arm64)
-        uses: frequenz-io/gh-action-nox-cross-arch@v0.x.x
+        uses: frequenz-floss/gh-action-nox-cross-arch@v0.x.x
         with:
           architecture: arm64
           dockerfile: docker/Dockerfile.arm64
