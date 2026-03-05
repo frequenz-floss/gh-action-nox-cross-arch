@@ -42,6 +42,17 @@ jobs:
 > If you need to do some regular `nox` testing without cross-arch you can use the
 > [`gh-action-nox`](https://github.com/frequenz-floss/gh-action-nox) action.
 
+## Security model
+
+This action runs `pip install` and `nox` against the checked-out project.
+That is expected to execute project code (`noxfile.py`, package build hooks,
+test setup, etc.).
+
+- Do **not** use this action in `pull_request_target` workflows for untrusted
+  pull requests (especially forks).
+- QEMU emulation is not a security sandbox. Treat executed code as having the
+  same trust requirements as native CI execution.
+
 ## Inputs
 
 * `nox_session`: The nox session to run. Required.
