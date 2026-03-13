@@ -64,7 +64,7 @@ runs:
       with:
         script: "${{ github.action_path }}/run-nox"
         pass_env: "NOX_SESSION=${{ inputs.nox_session }} NOX_DEPENDENCIES=${{ inputs.nox_dependencies }}"
-        architecture: ${{ matrix.architecture }}
+        architecture: ${{ inputs.architecture }}
         ubuntu_version: ${{ inputs.ubuntu_version }}
         python_version: ${{ inputs.python_version }}
         dockerfile: ${{ inputs.dockerfile }}
